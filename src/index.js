@@ -104,8 +104,9 @@ client.on(Events.InteractionCreate, async interaction => {
 
   if (interaction.commandName === 'bozo-criar') {
     const rounds = interaction.options.getInteger('rodadas');
-    if (games.has(interaction.guildId)) {
-      await interaction.reply({ content: 'Já existe uma partida neste servidor.', ephemeral: true });
+    const existing = games.get(interaction.guildId);
+    if (existing && !existing.finished) {
+      await interaction.reply({ content: 'Já existe uma partida em andamento neste servidor.', ephemeral: true });
       return;
     }
 
