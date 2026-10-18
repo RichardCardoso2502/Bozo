@@ -65,6 +65,9 @@ function createGame(ownerId, rounds) {
 
 function addPlayer(game, user) {
   if (game.started) return { error: 'A partida já começou.' };
+  if (game.players.length >= 6) {
+    return { error: 'O jogo permite no máximo 6 jogadores.' };
+  }
   if (game.players.some(player => player.id === user.id)) {
     return { error: 'Você já está nesta partida.' };
   }
@@ -83,7 +86,7 @@ function addPlayer(game, user) {
 
 function startGame(game) {
   if (game.started) return { error: 'A partida já começou.' };
-  if (game.players.length < 1) return { error: 'É preciso ter pelo menos um jogador.' };
+  if (game.players.length < 2) return { error: 'É preciso ter pelo menos 2 jogadores para iniciar.' };
 
   game.started = true;
   game.currentRound = 1;

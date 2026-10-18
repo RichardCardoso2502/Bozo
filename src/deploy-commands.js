@@ -59,6 +59,10 @@ const commands = [
   new SlashCommandBuilder()
     .setName('bozo-status')
     .setDescription('Mostra o estado e a pontuação da partida.')
+    .toJSON(),
+  new SlashCommandBuilder()
+    .setName('regras')
+    .setDescription('Mostra as regras do jogo Bozó.')
     .toJSON()
 ];
 

@@ -45,6 +45,57 @@ client.on(Events.InteractionCreate, async interaction => {
     return;
   }
 
+  if (interaction.commandName === 'regras') {
+    const embed = {
+      color: 0x5865F2,
+      title: '📜 Regras do Bozó',
+      description:
+        'Bozó é um jogo de dados estratégico que mescla sorte com raciocínio lógico. '
+        + 'Popular nos estados de Mato Grosso e Mato Grosso do Sul, o objetivo é alcançar a maior pontuação. '
+        + 'Vence quem somar mais pontos ao final das rodadas.',
+      fields: [
+        {
+          name: '🎲 Componentes',
+          value: '5 dados D6, 1 copo de couro, tabela e caneta.',
+          inline: true
+        },
+        {
+          name: '👥 Jogadores',
+          value: 'De 2 a 6 pessoas, jogando no sentido horário.',
+          inline: true
+        },
+        {
+          name: '🎯 Como jogar',
+          value:
+            'Cada jogador lança os 5 dados no copo e verifica se nenhum ficou em cima do outro. '
+            + 'Caso contrário, lança novamente. Existem 10 combinações possíveis para pontuar.',
+          inline: false
+        },
+        {
+          name: '📊 Pontuação',
+          value:
+            '• **Ás:** soma dos 1s (1 a 5)\n'
+            + '• **Duque:** soma dos 2s (2 a 10)\n'
+            + '• **Terno:** soma dos 3s (3 a 15)\n'
+            + '• **Quadra:** soma dos 4s (4 a 20)\n'
+            + '• **Quina:** soma dos 5s (5 a 25)\n'
+            + '• **Sena:** soma dos 6s (6 a 30)\n'
+            + '• **Fu:** 2 de um tipo + 3 de outro = 20\n'
+            + '• **Seguida:** sequência 1-5 ou 2-6 = 30\n'
+            + '• **Quadrada:** 4 iguais + 1 diferente = 40\n'
+            + '• **General:** todos iguais = 50',
+          inline: false
+        }
+      ],
+      footer: {
+        text: 'Use /bozo-criar para iniciar uma partida e /bozo-status para acompanhar o placar.'
+      }
+    };
+
+    await interaction.reply({ embeds: [embed] });
+    return;
+  }
+
   const guildError = requireGuild(interaction);
   if (guildError) {
     await interaction.reply({ content: guildError, ephemeral: true });
