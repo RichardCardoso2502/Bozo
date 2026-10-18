@@ -59,7 +59,10 @@ function createGame(ownerId, rounds) {
     currentPlayerIndex: 0,
     players: [],
     started: false,
-    finished: false
+    finished: false,
+    channelId: null,
+    messageId: null,
+    rollMessageId: null
   };
 }
 

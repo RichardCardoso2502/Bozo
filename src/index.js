@@ -1,11 +1,18 @@
 require('dotenv').config();
 
-const { Client, Events, GatewayIntentBits } = require('discord.js');
+const {
+  Client,
+  Events,
+  GatewayIntentBits,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  StringSelectMenuBuilder
+} = require('discord.js');
 const {
   CATEGORY_NAMES,
   addPlayer,
   createGame,
-  formatScores,
   getCurrentPlayer,
   rollForCurrentPlayer,
   scoreCurrentPlayer,
@@ -25,12 +32,8 @@ const client = new Client({
 
 const games = new Map();
 
-function getGame(interaction) {
-  return games.get(interaction.guildId);
-}
-
-function requireGuild(interaction) {
-  return interaction.inGuild() ? null : 'Este comando só pode ser usado dentro de um servidor.';
+function getGame(guildId) {
+  return games.get(guildId);
 }
 
 client.once(Events.ClientReady, readyClient => {
@@ -38,8 +41,31 @@ client.once(Events.ClientReady, readyClient => {
 });
 
 client.on(Events.InteractionCreate, async interaction => {
-  if (!interaction.isChatInputCommand()) return;
+  if (interaction.isChatInputCommand()) {
+    await handleChatInput(interaction);
+    return;
+  }
 
+  if (interaction.isButton()) {
+    if (interaction.customId === 'bozo_join') {
+      await handleJoinButton(interaction);
+      return;
+    }
+    if (interaction.customId === 'bozo_roll') {
+      await handleRollButton(interaction);
+      return;
+    }
+  }
+
+  if (interaction.isStringSelectMenu()) {
+    if (interaction.customId === 'bozo_score') {
+      await handleScoreSelect(interaction);
+      return;
+    }
+  }
+});
+
+async function handleChatInput(interaction) {
   if (interaction.commandName === 'ping') {
     await interaction.reply(`Pong! Latência: ${client.ws.ping}ms`);
     return;
@@ -102,31 +128,48 @@ client.on(Events.InteractionCreate, async interaction => {
     return;
   }
 
+  const game = getGame(interaction.guildId);
+
   if (interaction.commandName === 'bozo-criar') {
     const rounds = interaction.options.getInteger('rodadas');
-    const existing = games.get(interaction.guildId);
+    const existing = getGame(interaction.guildId);
     if (existing && !existing.finished) {
       await interaction.reply({ content: 'Já existe uma partida em andamento neste servidor.', ephemeral: true });
       return;
     }
 
-    games.set(interaction.guildId, createGame(interaction.user.id, rounds));
-    await interaction.reply(`Partida criada para **${rounds} rodada(s)**. Use **/bozo-entrar** para participar.`);
-    return;
-  }
+    const newGame = createGame(interaction.user.id, rounds);
+    newGame.channelId = interaction.channelId;
+    games.set(interaction.guildId, newGame);
 
-  const game = getGame(interaction);
-  if (!game) {
-    await interaction.reply({ content: 'Não existe uma partida neste servidor. Use `/bozo-criar`.', ephemeral: true });
+    const embed = {
+      color: 0x5865F2,
+      title: '🎲 Partida de Bozó criada!',
+      description: `Partida para **${rounds} rodada(s)**.\nClique no botão abaixo para entrar.\n\n**Jogadores:**\n• <@${interaction.user.id}>`,
+      footer: { text: 'Use /bozo-iniciar quando todos estiverem prontos.' }
+    };
+
+    const row = newActionRowJoin();
+    const msg = await interaction.reply({ embeds: [embed], components: [row], fetchReply: true });
+    newGame.messageId = msg.id;
     return;
   }
 
   if (interaction.commandName === 'bozo-entrar') {
+    if (!game) {
+      await interaction.reply({ content: 'Não existe uma partida neste servidor. Use `/bozo-criar`.', ephemeral: true });
+      return;
+    }
     const result = addPlayer(game, interaction.user);
     await interaction.reply({
       content: result.error || `**${result.player.name}** entrou na partida. Jogadores: ${game.players.length}`,
       ephemeral: Boolean(result.error)
     });
+    return;
+  }
+
+  if (!game) {
+    await interaction.reply({ content: 'Não existe uma partida neste servidor. Use `/bozo-criar`.', ephemeral: true });
     return;
   }
 
@@ -142,7 +185,16 @@ client.on(Events.InteractionCreate, async interaction => {
       return;
     }
 
-    await interaction.reply(`Partida iniciada! Rodada **1/${game.rounds}**. É a vez de <@${result.player.id}>. Use **/bozo-confirmar** para rolar.`);
+    const current = getCurrentPlayer(game);
+    const embed = {
+      color: 0xFEE75C,
+      title: '🎲 Partida iniciada!',
+      description: `Rodada **1/${game.rounds}**.\nÉ a vez de <@${current.id}>.\nClique no botão abaixo para rolar os dados.`
+    };
+
+    const row = newActionRowRoll();
+    const msg = await interaction.reply({ content: `<@${current.id}>`, embeds: [embed], components: [row], fetchReply: true });
+    game.rollMessageId = msg.id;
     return;
   }
 
@@ -158,15 +210,7 @@ client.on(Events.InteractionCreate, async interaction => {
       return;
     }
 
-    const player = result.player;
-    const available = Object.entries(result.scores)
-      .filter(([, points]) => points > 0)
-      .filter(([category]) => !Object.hasOwn(player.scores, category))
-      .map(([category, points]) => `• ${CATEGORY_NAMES[category]}: ${points}`)
-      .join('\n') || 'Nenhuma combinação pontuável disponível.';
-
-    const dice = result.dice.map(value => `**${value}**`).join(' - ');
-    await interaction.reply(`🎲 <@${result.player.id}> rolou: ${dice}\n\n**Categorias disponíveis para marcar:**\n${available}\n\nEscolha uma com **/bozo-marcar**.`);
+    await showScoreSelection(interaction, game, result.player, result.dice, result.scores);
     return;
   }
 
@@ -177,29 +221,253 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 
     const category = interaction.options.getString('categoria');
-    const result = scoreCurrentPlayer(game, category);
-    if (result.error) {
-      await interaction.reply({ content: result.error, ephemeral: true });
-      return;
-    }
-
-    if (result.finished) {
-      const ranking = [...game.players].sort((a, b) => b.total - a.total)
-        .map((player, index) => `${index + 1}. ${player.name}: ${player.total} pontos`)
-        .join('\n');
-      await interaction.reply(`**${result.player.name}** marcou **${result.points}** pontos.\n\n🏆 Partida encerrada!\n${ranking}`);
-      return;
-    }
-
-    await interaction.reply(`**${result.player.name}** marcou **${result.points}** pontos em **${CATEGORY_NAMES[category]}**. Rodada **${game.currentRound}/${game.rounds}**. É a vez de <@${result.nextPlayer.id}>. Use **/bozo-confirmar**.`);
+    await handleScoreSelection(interaction, game, category);
     return;
   }
 
   if (interaction.commandName === 'bozo-status') {
-    const players = game.players.map(player => `${player.name}: ${player.total} pontos`).join('\n') || 'nenhum jogador';
+    const players = game.players.map(p => `${p.name}: ${p.total} pontos`).join('\n') || 'nenhum jogador';
     const current = game.started && !game.finished ? `\nVez atual: <@${getCurrentPlayer(game).id}>` : '';
     await interaction.reply(`Partida: ${game.finished ? 'encerrada' : game.started ? `rodada ${game.currentRound}/${game.rounds}` : 'aguardando jogadores'}\n${players}${current}`);
   }
-});
+}
+
+function requireGuild(interaction) {
+  return interaction.inGuild() ? null : 'Este comando só pode ser usado dentro de um servidor.';
+}
+
+async function handleJoinButton(interaction) {
+  const game = getGame(interaction.guildId);
+  if (!game) {
+    await interaction.reply({ content: 'Não existe uma partida neste servidor.', ephemeral: true });
+    return;
+  }
+  if (game.started) {
+    await interaction.reply({ content: 'A partida já começou.', ephemeral: true });
+    return;
+  }
+  if (game.players.length >= 6) {
+    await interaction.reply({ content: 'O jogo permite no máximo 6 jogadores.', ephemeral: true });
+    return;
+  }
+  if (game.players.some(p => p.id === interaction.user.id)) {
+    await interaction.reply({ content: 'Você já está nesta partida.', ephemeral: true });
+    return;
+  }
+
+  addPlayer(game, interaction.user);
+
+  const playersList = game.players.map(p => `• <@${p.id}>`).join('\n');
+  const embed = {
+    color: 0x5865F2,
+    title: '🎲 Partida de Bozó criada!',
+    description: `Partida para **${game.rounds} rodada(s)**.\nClique no botão abaixo para entrar.\n\n**Jogadores:**\n${playersList}`,
+    footer: { text: 'Use /bozo-iniciar quando todos estiverem prontos.' }
+  };
+
+  const row = newActionRowJoin();
+
+  try {
+    if (game.channelId && game.messageId) {
+      const channel = await client.channels.fetch(game.channelId);
+      const msg = await channel.messages.fetch(game.messageId);
+      await msg.edit({ embeds: [embed], components: [row] });
+    }
+  } catch (e) {
+    console.error('Erro ao atualizar mensagem de entrada:', e);
+  }
+
+  await interaction.reply({
+    content: `**${interaction.user.globalName || interaction.user.username}** entrou na partida. Jogadores: ${game.players.length}`,
+    ephemeral: true
+  });
+}
+
+async function handleRollButton(interaction) {
+  const game = getGame(interaction.guildId);
+  if (!game || !game.started || game.finished) {
+    await interaction.reply({ content: 'Não há uma partida em andamento.', ephemeral: true });
+    return;
+  }
+  if (getCurrentPlayer(game)?.id !== interaction.user.id) {
+    await interaction.reply({ content: `Agora é a vez de <@${getCurrentPlayer(game)?.id}>.`, ephemeral: true });
+    return;
+  }
+
+  const result = rollForCurrentPlayer(game);
+  if (result.error) {
+    await interaction.reply({ content: result.error, ephemeral: true });
+    return;
+  }
+
+  try {
+    if (game.channelId && game.rollMessageId) {
+      const channel = await client.channels.fetch(game.channelId);
+      const msg = await channel.messages.fetch(game.rollMessageId);
+      const disabledRow = newActionRowRoll(true);
+      await msg.edit({ components: [disabledRow] });
+    }
+  } catch (e) {
+    console.error('Erro ao desabilitar botão de rolar:', e);
+  }
+
+  await showScoreSelection(interaction, game, result.player, result.dice, result.scores);
+}
+
+async function showScoreSelection(interaction, game, player, dice, scores) {
+  const options = Object.entries(scores)
+    .filter(([, pts]) => pts > 0)
+    .filter(([cat]) => !Object.hasOwn(player.scores, cat))
+    .map(([cat, pts]) => ({
+      label: `${CATEGORY_NAMES[cat]} (${pts} pts)`,
+      value: cat,
+      description: `Pontuação: ${pts}`
+    }));
+
+  if (options.length === 0) {
+    await interaction.reply({ content: 'Nenhuma combinação pontuável disponível nesta rolagem. Sua vez foi pulada.', ephemeral: true });
+    await advanceTurn(interaction, game);
+    return;
+  }
+
+  const select = new StringSelectMenuBuilder()
+    .setCustomId('bozo_score')
+    .setPlaceholder('Escolha uma categoria para marcar')
+    .addOptions(options);
+
+  const row = new ActionRowBuilder().addComponents(select);
+
+  const embed = {
+    color: 0x5865F2,
+    title: '🎲 Resultado da rolagem',
+    description: `<@${player.id}> rolou: ${dice.map(v => `**${v}**`).join(' - ')}\n\nEscolha abaixo a categoria para marcar:`
+  };
+
+  await interaction.reply({ content: `<@${player.id}>`, embeds: [embed], components: [row] });
+}
+
+async function handleScoreSelect(interaction) {
+  const game = getGame(interaction.guildId);
+  if (!game || !game.started || game.finished) {
+    await interaction.reply({ content: 'Não há partida em andamento.', ephemeral: true });
+    return;
+  }
+  if (getCurrentPlayer(game)?.id !== interaction.user.id) {
+    await interaction.reply({ content: `Agora é a vez de <@${getCurrentPlayer(game)?.id}>.`, ephemeral: true });
+    return;
+  }
+
+  const category = interaction.values[0];
+  const result = scoreCurrentPlayer(game, category);
+  if (result.error) {
+    await interaction.reply({ content: result.error, ephemeral: true });
+    return;
+  }
+
+  const player = result.player;
+
+  if (result.finished) {
+    const ranking = [...game.players].sort((a, b) => b.total - a.total)
+      .map((p, i) => `${i + 1}. <@${p.id}>: ${p.total} pontos`)
+      .join('\n');
+    const embed = {
+      color: 0xFF4500,
+      title: '🏆 Partida encerrada!',
+      description: `**${player.name}** marcou **${result.points}** pontos em **${CATEGORY_NAMES[category]}**.\n\n${ranking}`
+    };
+    await interaction.reply({ embeds: [embed] });
+    return;
+  }
+
+  await interaction.reply({
+    content: `**${player.name}** marcou **${result.points}** pontos em **${CATEGORY_NAMES[category]}**. Rodada **${game.currentRound}/${game.rounds}**.`,
+    ephemeral: true
+  });
+
+  await advanceTurn(interaction, game);
+}
+
+async function handleScoreSelection(interaction, game, category) {
+  const result = scoreCurrentPlayer(game, category);
+  if (result.error) {
+    await interaction.reply({ content: result.error, ephemeral: true });
+    return;
+  }
+
+  const player = result.player;
+
+  if (result.finished) {
+    const ranking = [...game.players].sort((a, b) => b.total - a.total)
+      .map((p, i) => `${i + 1}. <@${p.id}>: ${p.total} pontos`)
+      .join('\n');
+    const embed = {
+      color: 0xFF4500,
+      title: '🏆 Partida encerrada!',
+      description: `**${player.name}** marcou **${result.points}** pontos em **${CATEGORY_NAMES[category]}**.\n\n${ranking}`
+    };
+    await interaction.reply({ embeds: [embed] });
+    return;
+  }
+
+  await interaction.reply({
+    content: `**${player.name}** marcou **${result.points}** pontos em **${CATEGORY_NAMES[category]}**. Rodada **${game.currentRound}/${game.rounds}**.`
+  });
+
+  await advanceTurn(interaction, game);
+}
+
+async function advanceTurn(interaction, game) {
+  if (game.currentPlayerIndex === game.players.length - 1) {
+    game.currentRound += 1;
+    game.currentPlayerIndex = 0;
+  } else {
+    game.currentPlayerIndex += 1;
+  }
+
+  if (game.currentRound > game.rounds) {
+    game.finished = true;
+    const ranking = [...game.players].sort((a, b) => b.total - a.total)
+      .map((p, i) => `${i + 1}. <@${p.id}>: ${p.total} pontos`)
+      .join('\n');
+    if (interaction.channel) {
+      await interaction.channel.send({ content: '🏆 Partida encerrada!\n' + ranking });
+    }
+    return;
+  }
+
+  const next = getCurrentPlayer(game);
+  const embed = {
+    color: 0xFEE75C,
+    title: '🎲 Próxima vez',
+    description: `Rodada **${game.currentRound}/${game.rounds}**.\nÉ a vez de <@${next.id}>.\nClique no botão abaixo para rolar os dados.`
+  };
+
+  const row = newActionRowRoll();
+  if (interaction.channel) {
+    const msg = await interaction.channel.send({ content: `<@${next.id}>`, embeds: [embed], components: [row] });
+    game.rollMessageId = msg.id;
+  }
+}
+
+function newActionRowJoin() {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('bozo_join')
+      .setLabel('Entrar na Partida')
+      .setStyle(ButtonStyle.Primary)
+      .setEmoji('👤')
+  );
+}
+
+function newActionRowRoll(disabled = false) {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('bozo_roll')
+      .setLabel('Rolar Dados 🎲')
+      .setStyle(ButtonStyle.Success)
+      .setEmoji('🎲')
+      .setDisabled(disabled)
+  );
+}
 
 client.login(token);

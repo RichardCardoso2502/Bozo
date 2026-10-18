@@ -43,18 +43,8 @@ const commands = [
       .setName('categoria')
       .setDescription('Categoria para marcar.')
       .setRequired(true)
-      .addChoices(
-        { name: 'Ás', value: 'as' },
-        { name: 'Duque', value: 'duque' },
-        { name: 'Terno', value: 'terno' },
-        { name: 'Quadra', value: 'quadra' },
-        { name: 'Quina', value: 'quina' },
-        { name: 'Sena', value: 'sena' },
-        { name: 'Fu', value: 'fu' },
-        { name: 'Seguida', value: 'seguida' },
-        { name: 'Quadrada', value: 'quadrada' },
-        { name: 'General', value: 'general' }
-      ))
+      .setAutocomplete(true)
+      )
     .toJSON(),
   new SlashCommandBuilder()
     .setName('bozo-status')
