@@ -118,6 +118,7 @@ function scoreCurrentPlayer(game, category) {
   if (Object.hasOwn(player.scores, category)) return { error: 'Você já usou essa categoria.' };
 
   const points = player.availableScores[category];
+  if (points === 0) return { error: 'Esta categoria não pontua com os dados rolados.' };
   player.scores[category] = points;
   player.total += points;
   player.dice = null;

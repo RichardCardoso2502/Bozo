@@ -158,8 +158,15 @@ client.on(Events.InteractionCreate, async interaction => {
       return;
     }
 
+    const player = result.player;
+    const available = Object.entries(result.scores)
+      .filter(([, points]) => points > 0)
+      .filter(([category]) => !Object.hasOwn(player.scores, category))
+      .map(([category, points]) => `• ${CATEGORY_NAMES[category]}: ${points}`)
+      .join('\n') || 'Nenhuma combinação pontuável disponível.';
+
     const dice = result.dice.map(value => `**${value}**`).join(' - ');
-    await interaction.reply(`🎲 <@${result.player.id}> rolou: ${dice}\nPontuações disponíveis: ${formatScores(result.scores)}\nEscolha uma categoria com **/bozo-marcar**.`);
+    await interaction.reply(`🎲 <@${result.player.id}> rolou: ${dice}\n\n**Categorias disponíveis para marcar:**\n${available}\n\nEscolha uma com **/bozo-marcar**.`);
     return;
   }
 
