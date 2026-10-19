@@ -52,7 +52,7 @@ npm start
 1. Uma pessoa cria a partida:
 
    ```text
-   /bozo-criar rodadas:3
+   /bozo-criar rodadas:3 (de 3 a 10 rodadas)
    ```
 
    Junto com a mensagem de criação aparecem dois botões:

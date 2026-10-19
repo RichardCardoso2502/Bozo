@@ -19,10 +19,10 @@ const commands = [
     .setDescription('Cria uma partida de Bozó.')
     .addIntegerOption(option => option
       .setName('rodadas')
-      .setDescription('Quantidade de rodadas (1 a 3).')
+      .setDescription('Quantidade de rodadas (3 a 10).')
       .setRequired(true)
-      .setMinValue(1)
-      .setMaxValue(3))
+      .setMinValue(3)
+      .setMaxValue(10))
     .toJSON(),
   new SlashCommandBuilder()
     .setName('bozo-entrar')
