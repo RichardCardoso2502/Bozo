@@ -48,8 +48,15 @@ client.once(Events.ClientReady, readyClient => {
 });
 
 client.on(Events.Error, error => {
-  console.error('Erro no cliente Discord:', error);
+  console.error('Erro no cliente Discord:', { code: error.code, message: error.message });
 });
+
+function replyToInteraction(interaction, options) {
+  if (interaction.deferred && interaction.isMessageComponent()) {
+    return interaction.followUp(options);
+  }
+  return interaction.reply(options);
+}
 
 client.on(Events.InteractionCreate, async interaction => {
   try {
@@ -60,14 +67,17 @@ client.on(Events.InteractionCreate, async interaction => {
 
     if (interaction.isButton()) {
       if (interaction.customId === 'bozo_join') {
+        await interaction.deferUpdate();
         await handleJoinButton(interaction);
         return;
       }
       if (interaction.customId === 'bozo_start') {
+        await interaction.deferUpdate();
         await handleStartButton(interaction);
         return;
       }
       if (interaction.customId === 'bozo_roll') {
+        await interaction.deferUpdate();
         await handleRollButton(interaction);
         return;
       }
@@ -75,25 +85,38 @@ client.on(Events.InteractionCreate, async interaction => {
 
     if (interaction.isStringSelectMenu()) {
       if (interaction.customId === 'bozo_score') {
+        await interaction.deferUpdate();
         await handleScoreSelect(interaction);
       }
     }
   } catch (error) {
-    console.error('Erro ao processar interação:', error);
+    const details = {
+      code: error.code,
+      message: error.message,
+      commandName: interaction.commandName,
+      customId: interaction.customId
+    };
+    if (error.code === 10062) {
+      console.warn('Interação expirou antes de ser confirmada:', details);
+      return;
+    }
+    console.error('Erro ao processar interação:', details);
 
-    if (error.code === 10062 || !interaction.isRepliable()) return;
+    if (!interaction.isRepliable()) return;
 
     try {
       const response = { content: 'Ocorreu um erro ao processar esta ação.', ephemeral: true };
-      if (interaction.deferred) {
+      if (interaction.deferred && !interaction.isMessageComponent()) {
         await interaction.editReply({ content: response.content });
       } else if (interaction.replied) {
+        await interaction.followUp(response);
+      } else if (interaction.deferred) {
         await interaction.followUp(response);
       } else {
         await interaction.reply(response);
       }
     } catch (replyError) {
-      console.error('Erro ao responder à interação:', replyError);
+      console.error('Erro ao responder à interação:', { code: replyError.code, message: replyError.message });
     }
   }
 });
@@ -171,6 +194,7 @@ async function handleChatInput(interaction) {
       return;
     }
 
+    await interaction.deferReply();
     const newGame = createGame(interaction.user.id, rounds);
     addPlayer(newGame, interaction.user);
     newGame.channelId = interaction.channelId;
@@ -184,7 +208,7 @@ async function handleChatInput(interaction) {
     };
 
     const row = newActionRowCreate();
-    const msg = await interaction.reply({ embeds: [embed], components: [row], fetchReply: true });
+  const msg = await interaction.editReply({ embeds: [embed], components: [row] });
     newGame.messageId = msg.id;
     return;
   }
@@ -219,6 +243,7 @@ async function handleChatInput(interaction) {
       return;
     }
 
+    await interaction.deferReply();
     const current = getCurrentPlayer(game);
     const embed = {
       color: 0xFEE75C,
@@ -227,7 +252,7 @@ async function handleChatInput(interaction) {
     };
 
     const row = newActionRowRoll();
-    const msg = await interaction.reply({ content: `<@${current.id}>`, embeds: [embed], components: [row], fetchReply: true });
+    const msg = await interaction.editReply({ content: `<@${current.id}>`, embeds: [embed], components: [row] });
     game.rollMessageId = msg.id;
     return;
   }
@@ -294,19 +319,19 @@ function requireGuild(interaction) {
 async function handleJoinButton(interaction) {
   const game = getGame(interaction.guildId);
   if (!game || game.messageId !== interaction.message.id) {
-    await interaction.reply({ content: 'Esta partida não existe mais ou expirou. Use `/bozo-criar` para criar outra.', ephemeral: true });
+    await replyToInteraction(interaction, { content: 'Esta partida não existe mais ou expirou. Use `/bozo-criar` para criar outra.', ephemeral: true });
     return;
   }
   if (game.started) {
-    await interaction.reply({ content: 'A partida já começou.', ephemeral: true });
+    await replyToInteraction(interaction, { content: 'A partida já começou.', ephemeral: true });
     return;
   }
   if (game.players.length >= 6) {
-    await interaction.reply({ content: 'O jogo permite no máximo 6 jogadores.', ephemeral: true });
+    await replyToInteraction(interaction, { content: 'O jogo permite no máximo 6 jogadores.', ephemeral: true });
     return;
   }
   if (game.players.some(p => p.id === interaction.user.id)) {
-    await interaction.reply({ content: 'Você já está nesta partida.', ephemeral: true });
+    await replyToInteraction(interaction, { content: 'Você já está nesta partida.', ephemeral: true });
     return;
   }
 
@@ -321,7 +346,7 @@ async function handleJoinButton(interaction) {
   };
 
   const row = newActionRowCreate();
-  await interaction.reply({
+  await replyToInteraction(interaction, {
     content: `**${interaction.user.globalName || interaction.user.username}** entrou na partida. Jogadores: ${game.players.length}`,
     ephemeral: true
   });
@@ -340,21 +365,21 @@ async function handleJoinButton(interaction) {
 async function handleStartButton(interaction) {
   const game = getGame(interaction.guildId);
   if (!game || game.messageId !== interaction.message.id) {
-    await interaction.reply({ content: 'Esta partida não existe mais ou expirou. Use `/bozo-criar` para criar outra.', ephemeral: true });
+    await replyToInteraction(interaction, { content: 'Esta partida não existe mais ou expirou. Use `/bozo-criar` para criar outra.', ephemeral: true });
     return;
   }
   if (game.started) {
-    await interaction.reply({ content: 'A partida já começou.', ephemeral: true });
+    await replyToInteraction(interaction, { content: 'A partida já começou.', ephemeral: true });
     return;
   }
   if (interaction.user.id !== game.ownerId) {
-    await interaction.reply({ content: 'Somente quem criou a partida pode iniciá-la.', ephemeral: true });
+    await replyToInteraction(interaction, { content: 'Somente quem criou a partida pode iniciá-la.', ephemeral: true });
     return;
   }
 
   const result = startGame(game);
   if (result.error) {
-    await interaction.reply({ content: result.error, ephemeral: true });
+    await replyToInteraction(interaction, { content: result.error, ephemeral: true });
     return;
   }
 
@@ -366,7 +391,7 @@ async function handleStartButton(interaction) {
   };
 
   const row = newActionRowRoll();
-  const msg = await interaction.reply({ content: `<@${current.id}>`, embeds: [embed], components: [row], fetchReply: true });
+  const msg = await replyToInteraction(interaction, { content: `<@${current.id}>`, embeds: [embed], components: [row] });
   game.rollMessageId = msg.id;
 
   // Atualiza a mensagem original da partida (remove os botões de entrar/iniciar)
@@ -388,17 +413,17 @@ async function handleStartButton(interaction) {
 async function handleRollButton(interaction) {
   const game = getGame(interaction.guildId);
   if (!game || !game.started || game.finished || game.rollMessageId !== interaction.message.id) {
-    await interaction.reply({ content: 'Não há uma partida em andamento.', ephemeral: true });
+    await replyToInteraction(interaction, { content: 'Não há uma partida em andamento.', ephemeral: true });
     return;
   }
   if (getCurrentPlayer(game)?.id !== interaction.user.id) {
-    await interaction.reply({ content: `Agora é a vez de <@${getCurrentPlayer(game)?.id}>.`, ephemeral: true });
+    await replyToInteraction(interaction, { content: `Agora é a vez de <@${getCurrentPlayer(game)?.id}>.`, ephemeral: true });
     return;
   }
 
   const result = rollForCurrentPlayer(game);
   if (result.error) {
-    await interaction.reply({ content: result.error, ephemeral: true });
+    await replyToInteraction(interaction, { content: result.error, ephemeral: true });
     return;
   }
 
@@ -429,7 +454,7 @@ async function showScoreSelection(interaction, game, player, dice, scores) {
   if (options.length === 0) {
     player.dice = null;
     player.availableScores = null;
-    await interaction.reply({ content: 'Nenhuma combinação pontuável disponível nesta rolagem. Sua vez foi pulada.', ephemeral: true });
+    await replyToInteraction(interaction, { content: 'Nenhuma combinação pontuável disponível nesta rolagem.', ephemeral: true });
     await advanceTurn(interaction, game, true);
     return;
   }
@@ -447,24 +472,24 @@ async function showScoreSelection(interaction, game, player, dice, scores) {
     description: `<@${player.id}> rolou: ${dice.map(v => `**${v}**`).join(' - ')}\n\nEscolha abaixo a categoria para marcar:`
   };
 
-  await interaction.reply({ content: `<@${player.id}>`, embeds: [embed], components: [row] });
+  await replyToInteraction(interaction, { content: `<@${player.id}>`, embeds: [embed], components: [row] });
 }
 
 async function handleScoreSelect(interaction) {
   const game = getGame(interaction.guildId);
   if (!game || !game.started || game.finished) {
-    await interaction.reply({ content: 'Não há partida em andamento.', ephemeral: true });
+    await replyToInteraction(interaction, { content: 'Não há partida em andamento.', ephemeral: true });
     return;
   }
   if (getCurrentPlayer(game)?.id !== interaction.user.id) {
-    await interaction.reply({ content: `Agora é a vez de <@${getCurrentPlayer(game)?.id}>.`, ephemeral: true });
+    await replyToInteraction(interaction, { content: `Agora é a vez de <@${getCurrentPlayer(game)?.id}>.`, ephemeral: true });
     return;
   }
 
   const category = interaction.values[0];
   const result = scoreCurrentPlayer(game, category);
   if (result.error) {
-    await interaction.reply({ content: result.error, ephemeral: true });
+    await replyToInteraction(interaction, { content: result.error, ephemeral: true });
     return;
   }
 
@@ -479,11 +504,11 @@ async function handleScoreSelect(interaction) {
       title: '🏆 Partida encerrada!',
       description: `**${player.name}** marcou **${result.points}** pontos em **${CATEGORY_NAMES[category]}**.\n\n${ranking}`
     };
-    await interaction.reply({ embeds: [embed] });
+    await replyToInteraction(interaction, { embeds: [embed] });
     return;
   }
 
-  await interaction.reply({
+  await replyToInteraction(interaction, {
     content: `**${player.name}** marcou **${result.points}** pontos em **${CATEGORY_NAMES[category]}**. Rodada **${game.currentRound}/${game.rounds}**.`,
     ephemeral: true
   });
