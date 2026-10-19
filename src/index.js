@@ -16,7 +16,8 @@ const {
   getCurrentPlayer,
   rollForCurrentPlayer,
   scoreCurrentPlayer,
-  startGame
+  startGame,
+  endGame
 } = require('./game');
 
 const token = process.env.DISCORD_TOKEN;
@@ -49,6 +50,10 @@ client.on(Events.InteractionCreate, async interaction => {
   if (interaction.isButton()) {
     if (interaction.customId === 'bozo_join') {
       await handleJoinButton(interaction);
+      return;
+    }
+    if (interaction.customId === 'bozo_start') {
+      await handleStartButton(interaction);
       return;
     }
     if (interaction.customId === 'bozo_roll') {
@@ -139,6 +144,7 @@ async function handleChatInput(interaction) {
     }
 
     const newGame = createGame(interaction.user.id, rounds);
+    addPlayer(newGame, interaction.user);
     newGame.channelId = interaction.channelId;
     games.set(interaction.guildId, newGame);
 
@@ -149,7 +155,7 @@ async function handleChatInput(interaction) {
       footer: { text: 'Use /bozo-iniciar quando todos estiverem prontos.' }
     };
 
-    const row = newActionRowJoin();
+    const row = newActionRowCreate();
     const msg = await interaction.reply({ embeds: [embed], components: [row], fetchReply: true });
     newGame.messageId = msg.id;
     return;
@@ -230,6 +236,27 @@ async function handleChatInput(interaction) {
     const current = game.started && !game.finished ? `\nVez atual: <@${getCurrentPlayer(game).id}>` : '';
     await interaction.reply(`Partida: ${game.finished ? 'encerrada' : game.started ? `rodada ${game.currentRound}/${game.rounds}` : 'aguardando jogadores'}\n${players}${current}`);
   }
+
+  if (interaction.commandName === 'bozo-encerrar') {
+    if (!game) {
+      await interaction.reply({ content: 'Não existe uma partida neste servidor.', ephemeral: true });
+      return;
+    }
+    if (interaction.user.id !== game.ownerId) {
+      await interaction.reply({ content: 'Somente quem criou a partida pode encerrá-la.', ephemeral: true });
+      return;
+    }
+
+    const { ranking } = endGame(game);
+
+    const embed = {
+      color: 0xFF4500,
+      title: '🛑 Partida encerrada!',
+      description: `A partida foi encerrada pelo criador.\n\n**Placar final:**\n${ranking}`
+    };
+    await interaction.reply({ embeds: [embed] });
+    return;
+  }
 }
 
 function requireGuild(interaction) {
@@ -265,7 +292,7 @@ async function handleJoinButton(interaction) {
     footer: { text: 'Use /bozo-iniciar quando todos estiverem prontos.' }
   };
 
-  const row = newActionRowJoin();
+  const row = newActionRowCreate();
 
   try {
     if (game.channelId && game.messageId) {
@@ -281,6 +308,54 @@ async function handleJoinButton(interaction) {
     content: `**${interaction.user.globalName || interaction.user.username}** entrou na partida. Jogadores: ${game.players.length}`,
     ephemeral: true
   });
+}
+
+async function handleStartButton(interaction) {
+  const game = getGame(interaction.guildId);
+  if (!game) {
+    await interaction.reply({ content: 'Não existe uma partida neste servidor.', ephemeral: true });
+    return;
+  }
+  if (game.started) {
+    await interaction.reply({ content: 'A partida já começou.', ephemeral: true });
+    return;
+  }
+  if (interaction.user.id !== game.ownerId) {
+    await interaction.reply({ content: 'Somente quem criou a partida pode iniciá-la.', ephemeral: true });
+    return;
+  }
+
+  const result = startGame(game);
+  if (result.error) {
+    await interaction.reply({ content: result.error, ephemeral: true });
+    return;
+  }
+
+  const current = getCurrentPlayer(game);
+  const embed = {
+    color: 0xFEE75C,
+    title: '🎲 Partida iniciada!',
+    description: `Rodada **1/${game.rounds}**.\nÉ a vez de <@${current.id}>.\nClique no botão abaixo para rolar os dados.`
+  };
+
+  // Atualiza a mensagem original da partida (remove os botões de entrar/iniciar)
+  try {
+    if (game.channelId && game.messageId) {
+      const channel = await client.channels.fetch(game.channelId);
+      const msg = await channel.messages.fetch(game.messageId);
+      await msg.edit({
+        content: '🎲 Partida de Bozó iniciada!',
+        embeds: [embed],
+        components: []
+      });
+    }
+  } catch (e) {
+    console.error('Erro ao atualizar mensagem de criação:', e);
+  }
+
+  const row = newActionRowRoll();
+  const msg = await interaction.reply({ content: `<@${current.id}>`, embeds: [embed], components: [row], fetchReply: true });
+  game.rollMessageId = msg.id;
 }
 
 async function handleRollButton(interaction) {
@@ -325,8 +400,10 @@ async function showScoreSelection(interaction, game, player, dice, scores) {
     }));
 
   if (options.length === 0) {
+    player.dice = null;
+    player.availableScores = null;
     await interaction.reply({ content: 'Nenhuma combinação pontuável disponível nesta rolagem. Sua vez foi pulada.', ephemeral: true });
-    await advanceTurn(interaction, game);
+    await advanceTurn(interaction, game, true);
     return;
   }
 
@@ -416,23 +493,25 @@ async function handleScoreSelection(interaction, game, category) {
   await advanceTurn(interaction, game);
 }
 
-async function advanceTurn(interaction, game) {
-  if (game.currentPlayerIndex === game.players.length - 1) {
-    game.currentRound += 1;
-    game.currentPlayerIndex = 0;
-  } else {
-    game.currentPlayerIndex += 1;
-  }
-
-  if (game.currentRound > game.rounds) {
-    game.finished = true;
-    const ranking = [...game.players].sort((a, b) => b.total - a.total)
-      .map((p, i) => `${i + 1}. <@${p.id}>: ${p.total} pontos`)
-      .join('\n');
-    if (interaction.channel) {
-      await interaction.channel.send({ content: '🏆 Partida encerrada!\n' + ranking });
+async function advanceTurn(interaction, game, shouldIncrement = false) {
+  if (shouldIncrement) {
+    if (game.currentPlayerIndex === game.players.length - 1) {
+      game.currentRound += 1;
+      game.currentPlayerIndex = 0;
+    } else {
+      game.currentPlayerIndex += 1;
     }
-    return;
+
+    if (game.currentRound > game.rounds) {
+      game.finished = true;
+      const ranking = [...game.players].sort((a, b) => b.total - a.total)
+        .map((p, i) => `${i + 1}. <@${p.id}>: ${p.total} pontos`)
+        .join('\n');
+      if (interaction.channel) {
+        await interaction.channel.send({ content: '🏆 Partida encerrada!\n' + ranking });
+      }
+      return;
+    }
   }
 
   const next = getCurrentPlayer(game);
@@ -449,13 +528,18 @@ async function advanceTurn(interaction, game) {
   }
 }
 
-function newActionRowJoin() {
+function newActionRowCreate() {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('bozo_join')
       .setLabel('Entrar na Partida')
       .setStyle(ButtonStyle.Primary)
-      .setEmoji('👤')
+      .setEmoji('👤'),
+    new ButtonBuilder()
+      .setCustomId('bozo_start')
+      .setLabel('Iniciar Partida')
+      .setStyle(ButtonStyle.Success)
+      .setEmoji('🚀')
   );
 }
 

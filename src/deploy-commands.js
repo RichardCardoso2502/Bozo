@@ -4,8 +4,8 @@ const { REST, Routes, SlashCommandBuilder } = require('discord.js');
 
 const { DISCORD_TOKEN, DISCORD_CLIENT_ID, DISCORD_GUILD_ID } = process.env;
 
-if (!DISCORD_TOKEN || !DISCORD_CLIENT_ID || !DISCORD_GUILD_ID) {
-  console.error('Defina DISCORD_TOKEN, DISCORD_CLIENT_ID e DISCORD_GUILD_ID no arquivo .env.');
+if (!DISCORD_TOKEN || !DISCORD_CLIENT_ID) {
+  console.error('Defina DISCORD_TOKEN e DISCORD_CLIENT_ID no arquivo .env.');
   process.exit(1);
 }
 
@@ -51,6 +51,10 @@ const commands = [
     .setDescription('Mostra o estado e a pontuação da partida.')
     .toJSON(),
   new SlashCommandBuilder()
+    .setName('bozo-encerrar')
+    .setDescription('Encerra a partida atual (somente o criador).')
+    .toJSON(),
+  new SlashCommandBuilder()
     .setName('regras')
     .setDescription('Mostra as regras do jogo Bozó.')
     .toJSON()
@@ -58,14 +62,23 @@ const commands = [
 
 const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
 
+const isGuildOnly = process.argv.includes('--guild');
+
 (async () => {
   try {
-    console.log(`Registrando ${commands.length} comando(s) no servidor ${DISCORD_GUILD_ID}...`);
-
-    await rest.put(
-      Routes.applicationGuildCommands(DISCORD_CLIENT_ID, DISCORD_GUILD_ID),
-      { body: commands }
-    );
+    if (isGuildOnly && DISCORD_GUILD_ID) {
+      console.log(`Registrando ${commands.length} comando(s) no servidor de teste ${DISCORD_GUILD_ID}...`);
+      await rest.put(
+        Routes.applicationGuildCommands(DISCORD_CLIENT_ID, DISCORD_GUILD_ID),
+        { body: commands }
+      );
+    } else {
+      console.log(`Registrando ${commands.length} comando(s) globalmente (qualquer servidor)...`);
+      await rest.put(
+        Routes.applicationCommands(DISCORD_CLIENT_ID),
+        { body: commands }
+      );
+    }
 
     console.log('Comandos registrados com sucesso.');
   } catch (error) {

@@ -145,6 +145,14 @@ function scoreCurrentPlayer(game, category) {
   return { player, points, nextPlayer: getCurrentPlayer(game), finished: false };
 }
 
+function endGame(game) {
+  game.finished = true;
+  const ranking = [...game.players].sort((a, b) => b.total - a.total)
+    .map((p, i) => `${i + 1}. <@${p.id}>: ${p.total} pontos`)
+    .join('\n') || 'sem jogadores';
+  return { ranking };
+}
+
 function formatScores(scores) {
   return Object.entries(scores)
     .filter(([, points]) => points > 0)
@@ -158,6 +166,7 @@ module.exports = {
   createGame,
   addPlayer,
   startGame,
+  endGame,
   getCurrentPlayer,
   rollForCurrentPlayer,
   scoreCurrentPlayer,
