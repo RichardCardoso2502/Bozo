@@ -47,31 +47,53 @@ client.once(Events.ClientReady, readyClient => {
   console.log(`Bot conectado como ${readyClient.user.tag}`);
 });
 
+client.on(Events.Error, error => {
+  console.error('Erro no cliente Discord:', error);
+});
+
 client.on(Events.InteractionCreate, async interaction => {
-  if (interaction.isChatInputCommand()) {
-    await handleChatInput(interaction);
-    return;
-  }
+  try {
+    if (interaction.isChatInputCommand()) {
+      await handleChatInput(interaction);
+      return;
+    }
 
-  if (interaction.isButton()) {
-    if (interaction.customId === 'bozo_join') {
-      await handleJoinButton(interaction);
-      return;
+    if (interaction.isButton()) {
+      if (interaction.customId === 'bozo_join') {
+        await handleJoinButton(interaction);
+        return;
+      }
+      if (interaction.customId === 'bozo_start') {
+        await handleStartButton(interaction);
+        return;
+      }
+      if (interaction.customId === 'bozo_roll') {
+        await handleRollButton(interaction);
+        return;
+      }
     }
-    if (interaction.customId === 'bozo_start') {
-      await handleStartButton(interaction);
-      return;
-    }
-    if (interaction.customId === 'bozo_roll') {
-      await handleRollButton(interaction);
-      return;
-    }
-  }
 
-  if (interaction.isStringSelectMenu()) {
-    if (interaction.customId === 'bozo_score') {
-      await handleScoreSelect(interaction);
-      return;
+    if (interaction.isStringSelectMenu()) {
+      if (interaction.customId === 'bozo_score') {
+        await handleScoreSelect(interaction);
+      }
+    }
+  } catch (error) {
+    console.error('Erro ao processar interação:', error);
+
+    if (error.code === 10062 || !interaction.isRepliable()) return;
+
+    try {
+      const response = { content: 'Ocorreu um erro ao processar esta ação.', ephemeral: true };
+      if (interaction.deferred) {
+        await interaction.editReply({ content: response.content });
+      } else if (interaction.replied) {
+        await interaction.followUp(response);
+      } else {
+        await interaction.reply(response);
+      }
+    } catch (replyError) {
+      console.error('Erro ao responder à interação:', replyError);
     }
   }
 });
@@ -299,6 +321,10 @@ async function handleJoinButton(interaction) {
   };
 
   const row = newActionRowCreate();
+  await interaction.reply({
+    content: `**${interaction.user.globalName || interaction.user.username}** entrou na partida. Jogadores: ${game.players.length}`,
+    ephemeral: true
+  });
 
   try {
     if (game.channelId && game.messageId) {
@@ -309,11 +335,6 @@ async function handleJoinButton(interaction) {
   } catch (e) {
     console.error('Erro ao atualizar mensagem de entrada:', e);
   }
-
-  await interaction.reply({
-    content: `**${interaction.user.globalName || interaction.user.username}** entrou na partida. Jogadores: ${game.players.length}`,
-    ephemeral: true
-  });
 }
 
 async function handleStartButton(interaction) {
@@ -344,6 +365,10 @@ async function handleStartButton(interaction) {
     description: `Rodada **1/${game.rounds}**.\nÉ a vez de <@${current.id}>.\nClique no botão abaixo para rolar os dados.`
   };
 
+  const row = newActionRowRoll();
+  const msg = await interaction.reply({ content: `<@${current.id}>`, embeds: [embed], components: [row], fetchReply: true });
+  game.rollMessageId = msg.id;
+
   // Atualiza a mensagem original da partida (remove os botões de entrar/iniciar)
   try {
     if (game.channelId && game.messageId) {
@@ -358,10 +383,6 @@ async function handleStartButton(interaction) {
   } catch (e) {
     console.error('Erro ao atualizar mensagem de criação:', e);
   }
-
-  const row = newActionRowRoll();
-  const msg = await interaction.reply({ content: `<@${current.id}>`, embeds: [embed], components: [row], fetchReply: true });
-  game.rollMessageId = msg.id;
 }
 
 async function handleRollButton(interaction) {
@@ -381,6 +402,8 @@ async function handleRollButton(interaction) {
     return;
   }
 
+  await showScoreSelection(interaction, game, result.player, result.dice, result.scores);
+
   try {
     if (game.channelId && game.rollMessageId) {
       const channel = await client.channels.fetch(game.channelId);
@@ -391,8 +414,6 @@ async function handleRollButton(interaction) {
   } catch (e) {
     console.error('Erro ao desabilitar botão de rolar:', e);
   }
-
-  await showScoreSelection(interaction, game, result.player, result.dice, result.scores);
 }
 
 async function showScoreSelection(interaction, game, player, dice, scores) {
