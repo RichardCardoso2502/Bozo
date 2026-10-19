@@ -55,6 +55,7 @@ function createGame(ownerId, rounds) {
   return {
     ownerId,
     rounds,
+    createdAt: Date.now(),
     currentRound: 0,
     currentPlayerIndex: 0,
     players: [],

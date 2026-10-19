@@ -32,9 +32,15 @@ const client = new Client({
 });
 
 const games = new Map();
+const WAITING_GAME_TIMEOUT_MS = 30 * 60 * 1000;
 
 function getGame(guildId) {
-  return games.get(guildId);
+  const game = games.get(guildId);
+  if (game && !game.started && Date.now() - game.createdAt >= WAITING_GAME_TIMEOUT_MS) {
+    games.delete(guildId);
+    return undefined;
+  }
+  return game;
 }
 
 client.once(Events.ClientReady, readyClient => {
@@ -265,8 +271,8 @@ function requireGuild(interaction) {
 
 async function handleJoinButton(interaction) {
   const game = getGame(interaction.guildId);
-  if (!game) {
-    await interaction.reply({ content: 'Não existe uma partida neste servidor.', ephemeral: true });
+  if (!game || game.messageId !== interaction.message.id) {
+    await interaction.reply({ content: 'Esta partida não existe mais ou expirou. Use `/bozo-criar` para criar outra.', ephemeral: true });
     return;
   }
   if (game.started) {
@@ -312,8 +318,8 @@ async function handleJoinButton(interaction) {
 
 async function handleStartButton(interaction) {
   const game = getGame(interaction.guildId);
-  if (!game) {
-    await interaction.reply({ content: 'Não existe uma partida neste servidor.', ephemeral: true });
+  if (!game || game.messageId !== interaction.message.id) {
+    await interaction.reply({ content: 'Esta partida não existe mais ou expirou. Use `/bozo-criar` para criar outra.', ephemeral: true });
     return;
   }
   if (game.started) {
@@ -360,7 +366,7 @@ async function handleStartButton(interaction) {
 
 async function handleRollButton(interaction) {
   const game = getGame(interaction.guildId);
-  if (!game || !game.started || game.finished) {
+  if (!game || !game.started || game.finished || game.rollMessageId !== interaction.message.id) {
     await interaction.reply({ content: 'Não há uma partida em andamento.', ephemeral: true });
     return;
   }
