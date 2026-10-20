@@ -342,6 +342,8 @@ async function handleJoinButton(interaction) {
     return;
   }
 
+  await interaction.deferReply({ ephemeral: true });
+
   addPlayer(game, interaction.user);
 
   const playersList = game.players.map(p => `• <@${p.id}>`).join('\n');
@@ -427,6 +429,8 @@ async function handleRollButton(interaction) {
     await replyToInteraction(interaction, { content: `Agora é a vez de <@${getCurrentPlayer(game)?.id}>.`, ephemeral: true });
     return;
   }
+
+  await interaction.deferReply({ ephemeral: true });
 
   const result = rollForCurrentPlayer(game);
   if (result.error) {
