@@ -70,8 +70,36 @@ const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
 
 const isGuildOnly = process.argv.includes('--guild');
 
+async function clearExistingCommands() {
+  // Remove comandos globais existentes para evitar duplicação com comandos de guild
+  try {
+    const globalCommands = await rest.get(Routes.applicationCommands(DISCORD_CLIENT_ID));
+    if (globalCommands.length > 0) {
+      console.log(`Removendo ${globalCommands.length} comando(s) global(ais) existente(s)...`);
+      await rest.put(Routes.applicationCommands(DISCORD_CLIENT_ID), { body: [] });
+    }
+  } catch (error) {
+    console.warn('Não foi possível listar/remover comandos globais:', error.message);
+  }
+
+  // Remove comandos de guild existentes, se DISCORD_GUILD_ID estiver definido
+  if (DISCORD_GUILD_ID) {
+    try {
+      const guildCommands = await rest.get(Routes.applicationGuildCommands(DISCORD_CLIENT_ID, DISCORD_GUILD_ID));
+      if (guildCommands.length > 0) {
+        console.log(`Removendo ${guildCommands.length} comando(s) do servidor ${DISCORD_GUILD_ID}...`);
+        await rest.put(Routes.applicationGuildCommands(DISCORD_CLIENT_ID, DISCORD_GUILD_ID), { body: [] });
+      }
+    } catch (error) {
+      console.warn('Não foi possível listar/remover comandos do servidor:', error.message);
+    }
+  }
+}
+
 (async () => {
   try {
+    await clearExistingCommands();
+
     if (isGuildOnly && DISCORD_GUILD_ID) {
       console.log(`Registrando ${commands.length} comando(s) no servidor de teste ${DISCORD_GUILD_ID}...`);
       await rest.put(
