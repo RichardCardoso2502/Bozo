@@ -285,9 +285,7 @@ async function handleChatInput(interaction) {
   }
 
   if (interaction.commandName === 'bozo-status') {
-    const players = game.players.map(p => `${p.name}: ${p.total} pontos`).join('\n') || 'nenhum jogador';
-    const current = game.started && !game.finished ? `\nVez atual: <@${getCurrentPlayer(game).id}>` : '';
-    await interaction.reply(`Partida: ${game.finished ? 'encerrada' : game.started ? `rodada ${game.currentRound}/${game.rounds}` : 'aguardando jogadores'}\n${players}${current}`);
+    await interaction.reply(formatGameStatus(game));
   }
 
   if (interaction.commandName === 'bozo-encerrar') {
@@ -545,6 +543,12 @@ async function handleScoreSelection(interaction, game, category) {
   await advanceTurn(interaction, game);
 }
 
+function formatGameStatus(game) {
+  const players = game.players.map(p => `${p.name}: ${p.total} pontos`).join('\n') || 'nenhum jogador';
+  const current = game.started && !game.finished ? `\nVez atual: <@${getCurrentPlayer(game).id}>` : '';
+  return `Partida: ${game.finished ? 'encerrada' : game.started ? `rodada ${game.currentRound}/${game.rounds}` : 'aguardando jogadores'}\n${players}${current}`;
+}
+
 async function advanceTurn(interaction, game, shouldIncrement = false) {
   if (shouldIncrement) {
     if (game.currentPlayerIndex === game.players.length - 1) {
@@ -575,6 +579,9 @@ async function advanceTurn(interaction, game, shouldIncrement = false) {
 
   const row = newActionRowRoll();
   if (interaction.channel) {
+    if (game.currentPlayerIndex === 0 && game.currentRound > 1) {
+      await interaction.channel.send({ content: formatGameStatus(game) });
+    }
     const msg = await interaction.channel.send({ content: `<@${next.id}>`, embeds: [embed], components: [row] });
     game.rollMessageId = msg.id;
   }
