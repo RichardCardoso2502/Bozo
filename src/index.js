@@ -28,6 +28,13 @@ if (!token) {
   process.exit(1);
 }
 
+// Servidor web simples para satisfazer health check do Railway/Render
+const express = require('express');
+const app = express();
+app.get('/', (req, res) => res.send('Bot do Bozó está online!'));
+const port = process.env.PORT || 3000;
+app.listen(port, () => console.log(`Servidor web na porta ${port}`));
+
 const client = new Client({
   intents: [GatewayIntentBits.Guilds]
 });
