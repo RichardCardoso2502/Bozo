@@ -146,10 +146,26 @@ function scoreCurrentPlayer(game, category) {
   return { player, points, nextPlayer: getCurrentPlayer(game), finished: false };
 }
 
+function getCombinationCount(player) {
+  return Object.keys(CATEGORY_NAMES).filter(category => player.scores[category] > 0).length;
+}
+
+function formatPlayerScore(game, player) {
+  const combinations = game.rounds === 10 ? ` (${getCombinationCount(player)}/10 combinações)` : '';
+  return `${player.total} pontos${combinations}`;
+}
+
 function endGame(game) {
   game.finished = true;
-  const ranking = [...game.players].sort((a, b) => b.total - a.total)
-    .map((p, i) => `${i + 1}. <@${p.id}>: ${p.total} pontos`)
+  const ranking = [...game.players].sort((first, second) => {
+    if (game.rounds === 10) {
+      const firstCompleted = getCombinationCount(first) === 10;
+      const secondCompleted = getCombinationCount(second) === 10;
+      if (firstCompleted !== secondCompleted) return firstCompleted ? -1 : 1;
+    }
+    return second.total - first.total;
+  })
+    .map((player, index) => `${index + 1}. <@${player.id}>: ${formatPlayerScore(game, player)}`)
     .join('\n') || 'sem jogadores';
   return { ranking };
 }
@@ -168,6 +184,7 @@ module.exports = {
   addPlayer,
   startGame,
   endGame,
+  formatPlayerScore,
   getCurrentPlayer,
   rollForCurrentPlayer,
   scoreCurrentPlayer,

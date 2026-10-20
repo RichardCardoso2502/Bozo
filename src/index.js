@@ -17,7 +17,8 @@ const {
   rollForCurrentPlayer,
   scoreCurrentPlayer,
   startGame,
-  endGame
+  endGame,
+  formatPlayerScore
 } = require('./game');
 
 const token = process.env.DISCORD_TOKEN;
@@ -134,7 +135,9 @@ async function handleChatInput(interaction) {
       description:
         'Bozó é um jogo de dados estratégico que mescla sorte com raciocínio lógico. '
         + 'Popular nos estados de Mato Grosso e Mato Grosso do Sul, o objetivo é alcançar a maior pontuação. '
-        + 'Vence quem somar mais pontos ao final das rodadas.',
+        + 'Vence quem somar mais pontos ao final das rodadas. '
+        + 'No Clássico (10 rodadas), completar as 10 combinações diferentes tem prioridade sobre os pontos. '
+        + 'Se ninguém completar, vence a maior pontuação; se mais de um completar, os pontos decidem.',
       fields: [
         {
           name: '🎲 Componentes',
@@ -203,7 +206,7 @@ async function handleChatInput(interaction) {
     const embed = {
       color: 0x5865F2,
       title: '🎲 Partida de Bozó criada!',
-      description: `Partida para **${rounds} rodada(s)**.\nClique no botão abaixo para entrar.\n\n**Jogadores:**\n• <@${interaction.user.id}>`,
+      description: `Partida para **${rounds} rodada(s)${rounds === 10 ? ' (Clássico)' : ''}**.\nClique no botão abaixo para entrar.\n\n**Jogadores:**\n• <@${interaction.user.id}>`,
       footer: { text: 'Use /bozo-iniciar quando todos estiverem prontos.' }
     };
 
@@ -339,7 +342,7 @@ async function handleJoinButton(interaction) {
   const embed = {
     color: 0x5865F2,
     title: '🎲 Partida de Bozó criada!',
-    description: `Partida para **${game.rounds} rodada(s)**.\nClique no botão abaixo para entrar.\n\n**Jogadores:**\n${playersList}`,
+    description: `Partida para **${game.rounds} rodada(s)${game.rounds === 10 ? ' (Clássico)' : ''}**.\nClique no botão abaixo para entrar.\n\n**Jogadores:**\n${playersList}`,
     footer: { text: 'Use /bozo-iniciar quando todos estiverem prontos.' }
   };
 
@@ -494,9 +497,7 @@ async function handleScoreSelect(interaction) {
   const player = result.player;
 
   if (result.finished) {
-    const ranking = [...game.players].sort((a, b) => b.total - a.total)
-      .map((p, i) => `${i + 1}. <@${p.id}>: ${p.total} pontos`)
-      .join('\n');
+    const { ranking } = endGame(game);
     const embed = {
       color: 0xFF4500,
       title: '🏆 Partida encerrada!',
@@ -524,9 +525,7 @@ async function handleScoreSelection(interaction, game, category) {
   const player = result.player;
 
   if (result.finished) {
-    const ranking = [...game.players].sort((a, b) => b.total - a.total)
-      .map((p, i) => `${i + 1}. <@${p.id}>: ${p.total} pontos`)
-      .join('\n');
+    const { ranking } = endGame(game);
     const embed = {
       color: 0xFF4500,
       title: '🏆 Partida encerrada!',
@@ -544,9 +543,10 @@ async function handleScoreSelection(interaction, game, category) {
 }
 
 function formatGameStatus(game) {
-  const players = game.players.map(p => `${p.name}: ${p.total} pontos`).join('\n') || 'nenhum jogador';
+  const players = game.players.map(player => `${player.name}: ${formatPlayerScore(game, player)}`).join('\n') || 'nenhum jogador';
   const current = game.started && !game.finished ? `\nVez atual: <@${getCurrentPlayer(game).id}>` : '';
-  return `Partida: ${game.finished ? 'encerrada' : game.started ? `rodada ${game.currentRound}/${game.rounds}` : 'aguardando jogadores'}\n${players}${current}`;
+  const mode = game.rounds === 10 ? ' (Clássico)' : '';
+  return `Partida${mode}: ${game.finished ? 'encerrada' : game.started ? `rodada ${game.currentRound}/${game.rounds}` : 'aguardando jogadores'}\n${players}${current}`;
 }
 
 async function advanceTurn(interaction, game, shouldIncrement = false) {
@@ -559,10 +559,7 @@ async function advanceTurn(interaction, game, shouldIncrement = false) {
     }
 
     if (game.currentRound > game.rounds) {
-      game.finished = true;
-      const ranking = [...game.players].sort((a, b) => b.total - a.total)
-        .map((p, i) => `${i + 1}. <@${p.id}>: ${p.total} pontos`)
-        .join('\n');
+      const { ranking } = endGame(game);
       if (interaction.channel) {
         await interaction.channel.send({ content: '🏆 Partida encerrada!\n' + ranking });
       }

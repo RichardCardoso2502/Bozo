@@ -67,6 +67,8 @@ npm start
 
 Use `/bozo-status` para consultar a pontuação.
 
+Partidas de **10 (Clássico)** dão prioridade a quem completar as 10 combinações diferentes com pontuação positiva. Se ninguém completar, vence quem somar mais pontos. Se mais de um completar, os pontos decidem entre eles. O status do Clássico mostra também a quantidade de combinações realizadas, por exemplo: `100 pontos (7/10 combinações)`. Partidas de 3 a 9 rodadas continuam sendo decididas apenas pelos pontos.
+
 Se precisar encerrar a partida antes do fim (útil para testes), quem criou a partida usa `/bozo-encerrar`.
 
 As categorias seguem as regras definidas: Ás, Duque, Terno, Quadra, Quina, Sena, Fu, Seguida, Quadrada e General.

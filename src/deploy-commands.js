@@ -22,7 +22,13 @@ const commands = [
       .setDescription('Quantidade de rodadas (3 a 10).')
       .setRequired(true)
       .setMinValue(3)
-      .setMaxValue(10))
+      .setMaxValue(10)
+      .addChoices(
+        ...Array.from({ length: 8 }, (_, index) => {
+          const rounds = index + 3;
+          return { name: rounds === 10 ? '10 (Clássico)' : String(rounds), value: rounds };
+        })
+      ))
     .toJSON(),
   new SlashCommandBuilder()
     .setName('bozo-entrar')
