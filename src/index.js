@@ -135,9 +135,7 @@ async function handleChatInput(interaction) {
       description:
         'Bozó é um jogo de dados estratégico que mescla sorte com raciocínio lógico. '
         + 'Popular nos estados de Mato Grosso e Mato Grosso do Sul, o objetivo é alcançar a maior pontuação. '
-        + 'Vence quem somar mais pontos ao final das rodadas. '
-        + 'No Clássico (10 rodadas), completar as 10 combinações diferentes tem prioridade sobre os pontos. '
-        + 'Se ninguém completar, vence a maior pontuação; se mais de um completar, os pontos decidem.',
+        + 'Nas partidas de 3 a 9 rodadas, vence quem somar mais pontos ao final das rodadas.',
       fields: [
         {
           name: '🎲 Componentes',
@@ -154,6 +152,14 @@ async function handleChatInput(interaction) {
           value:
             'Cada jogador lança os 5 dados no copo e verifica se nenhum ficou em cima do outro. '
             + 'Caso contrário, lança novamente. Existem 10 combinações possíveis para pontuar.',
+          inline: false
+        },
+        {
+          name: 'Modo Clássico (10 rodadas)',
+          value:
+            'Ao final das 10 rodadas, quem completar as 10 combinações diferentes com pontuação positiva tem prioridade na vitória. '
+            + 'Se ninguém completar, vence quem somar mais pontos. Se mais de um completar, os pontos decidem entre eles. '
+            + 'Somente no Clássico, o status mostra também a quantidade de combinações realizadas ao lado dos pontos.',
           inline: false
         },
         {
