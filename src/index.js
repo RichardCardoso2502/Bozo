@@ -61,6 +61,7 @@ client.on(Events.Error, error => {
 
 function replyToInteraction(interaction, options) {
   if (interaction.deferred && interaction.isMessageComponent()) {
+    if (interaction.ephemeral) return interaction.editReply(options);
     return interaction.followUp(options);
   }
   return interaction.reply(options);
@@ -85,7 +86,7 @@ client.on(Events.InteractionCreate, async interaction => {
         return;
       }
       if (interaction.customId === 'bozo_roll') {
-        await interaction.deferUpdate();
+        await interaction.deferReply({ ephemeral: true });
         await handleRollButton(interaction);
         return;
       }
@@ -200,17 +201,15 @@ async function handleChatInput(interaction) {
     return;
   }
 
-  const game = getGame(interaction.guildId);
-
   if (interaction.commandName === 'bozo-criar') {
+    await interaction.deferReply({ ephemeral: true });
     const rounds = interaction.options.getInteger('rodadas');
     const existing = getGame(interaction.guildId);
     if (existing && !existing.finished) {
-      await interaction.reply({ content: 'Já existe uma partida em andamento neste servidor.', ephemeral: true });
+      await interaction.editReply({ content: 'Já existe uma partida em andamento neste servidor.' });
       return;
     }
 
-    await interaction.deferReply();
     const newGame = createGame(interaction.user.id, rounds);
     addPlayer(newGame, interaction.user);
     newGame.channelId = interaction.channelId;
@@ -224,10 +223,13 @@ async function handleChatInput(interaction) {
     };
 
     const row = newActionRowCreate();
-  const msg = await interaction.editReply({ embeds: [embed], components: [row] });
+    const msg = await interaction.channel.send({ embeds: [embed], components: [row] });
     newGame.messageId = msg.id;
+    await interaction.editReply({ content: 'Partida criada e anunciada neste canal.' });
     return;
   }
+
+  const game = getGame(interaction.guildId);
 
   if (interaction.commandName === 'bozo-entrar') {
     if (!game) {
@@ -349,8 +351,6 @@ async function handleJoinButton(interaction) {
     return;
   }
 
-  await interaction.deferReply({ ephemeral: true });
-
   addPlayer(game, interaction.user);
 
   const playersList = game.players.map(p => `• <@${p.id}>`).join('\n');
@@ -436,8 +436,6 @@ async function handleRollButton(interaction) {
     await replyToInteraction(interaction, { content: `Agora é a vez de <@${getCurrentPlayer(game)?.id}>.`, ephemeral: true });
     return;
   }
-
-  await interaction.deferReply({ ephemeral: true });
 
   const result = rollForCurrentPlayer(game);
   if (result.error) {
