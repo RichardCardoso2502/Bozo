@@ -24,9 +24,18 @@ const {
 const token = process.env.DISCORD_TOKEN;
 
 if (!token) {
-  console.error('DISCORD_TOKEN não foi definido. Copie .env.example para .env e preencha o token.');
+  console.error('DISCORD_TOKEN não foi definido. Defina a variável de ambiente DISCORD_TOKEN na plataforma de hospedagem.');
   process.exit(1);
 }
+
+// Evita que erros não capturados derrubem o servidor de health check do provedor de hospedagem
+process.on('uncaughtException', (error) => {
+  console.error('Exceção não capturada:', { message: error.message, stack: error.stack });
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('Promessa rejeitada não tratada:', { message: reason && reason.message ? reason.message : String(reason) });
+});
 
 // Servidor web simples para satisfazer health check do Railway/Render
 const express = require('express');
@@ -625,4 +634,19 @@ function newActionRowRoll(disabled = false) {
   );
 }
 
-client.login(token);
+client.login(token).catch((error) => {
+  console.error('Falha ao fazer login no Discord:', {
+    code: error.code,
+    message: error.message,
+  });
+});
+
+// Desligamento graceful ao receber sinal de término da plataforma de hospedagem
+function shutdown(signal) {
+  console.log(`Recebido ${signal}, encerrando...`);
+  client.destroy();
+  process.exit(0);
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
